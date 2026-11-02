@@ -11,9 +11,9 @@ from flask import Flask, request, abort
 app = Flask(__name__)
 
 # المفاتيح تنحط كمتغيرات بيئة، ولا تكتبها داخل الكود أبداً
-LINE_SECRET = os.environ["LINE_CHANNEL_SECRET"]
-LINE_TOKEN = os.environ["LINE_ACCESS_TOKEN"]
-GEMINI_KEY = os.environ["GEMINI_API_KEY"]
+LINE_SECRET = os.environ["LINE_CHANNEL_SECRET"].strip()
+LINE_TOKEN = os.environ["LINE_ACCESS_TOKEN"].strip()
+GEMINI_KEY = os.environ["GEMINI_API_KEY"].strip()
 
 MODEL = "gemini-2.5-flash-lite"
 
@@ -64,12 +64,22 @@ def ask_gemini(chat_id, text):
             },
             timeout=30,
         )
-        r.raise_for_status()
+    except Exception as e:
+        print("Gemini request failed:", repr(e), flush=True)
+        msgs.pop()
+        return "صار عندي خلل بسيط (اتصال)، جرب مرة ثانية 🙏"
+
+    if r.status_code != 200:
+        print("Gemini HTTP", r.status_code, r.text[:500], flush=True)
+        msgs.pop()
+        return f"صار عندي خلل بسيط (خطأ {r.status_code}) 🙏"
+
+    try:
         reply = r.json()["candidates"][0]["content"]["parts"][0]["text"]
     except Exception as e:
-        print("Gemini error:", e)
-        msgs.pop()  # نشيل رسالة المستخدم عشان ما يختل الترتيب
-        return "صار عندي خلل بسيط، جرب مرة ثانية 🙏"
+        print("Gemini parse error:", repr(e), r.text[:500], flush=True)
+        msgs.pop()
+        return "صار عندي خلل بسيط (رد غير متوقع) 🙏"
 
     msgs.append({"role": "model", "parts": [{"text": reply}]})
     return reply
