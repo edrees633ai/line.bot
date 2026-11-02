@@ -25,7 +25,8 @@ MODELS = [
 good_model = None
 
 # الأسماء اللي ينادونه فيها
-BOT_NAMES = ["منجي", "المنغولي"]
+# "منغولي" تغطي: المنغولي، يالمنغولي، يا منغولي
+BOT_NAMES = ["منغولي"]
 # كلمات الإيقاف
 STOP_WORDS = ["وقف", "اسكت"]
 # بعد كم ثانية من آخر رسالة يسكت لوحده
@@ -33,6 +34,8 @@ ACTIVE_SECONDS = 300
 
 SYSTEM_PROMPT = (
     "أنت بوت ظريف وودود في قروب على تطبيق لاين. "
+    "اسمك المنغولي (وينادونك أحياناً منغولي أو يالمنغولي). إذا أحد ناداك باسمك فهو يكلمك أنت، "
+    "فلا تتعامل مع الاسم كأنه شخص ثاني. "
     "ترد باللهجة السعودية البيضاء وبشكل مختصر (جملة إلى ثلاث جمل) "
     "إلا إذا طلب أحد شرحاً مفصلاً. لا تستخدم تنسيق ماركداون."
 )
@@ -66,7 +69,7 @@ def call_gemini(msgs):
                 "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
                 "contents": msgs,
             },
-            timeout=30,
+            timeout=(4, 10),
         )
         if r.status_code == 404:
             print("Model not found:", m, flush=True)
@@ -85,12 +88,18 @@ def ask_gemini(chat_id, text):
     while msgs and msgs[0]["role"] != "user":
         msgs.pop(0)
 
-    try:
-        r = call_gemini(msgs)
-    except Exception as e:
-        print("Gemini request failed:", repr(e), flush=True)
+    r = None
+    err = None
+    for attempt in range(2):
+        try:
+            r = call_gemini(msgs)
+            break
+        except Exception as e:
+            err = e
+            print("Gemini request failed:", repr(e), flush=True)
+    if r is None:
         msgs.pop()
-        return "صار عندي خلل بسيط (اتصال)، جرب مرة ثانية 🙏"
+        return f"صار عندي خلل بسيط (اتصال: {type(err).__name__}) 🙏"
 
     if r.status_code != 200:
         print("Gemini HTTP", r.status_code, r.text[:500], flush=True)
