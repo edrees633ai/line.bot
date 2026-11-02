@@ -15,7 +15,14 @@ LINE_SECRET = os.environ["LINE_CHANNEL_SECRET"].strip()
 LINE_TOKEN = os.environ["LINE_ACCESS_TOKEN"].strip()
 GEMINI_KEY = os.environ["GEMINI_API_KEY"].strip()
 
-MODEL = "gemini-2.5-flash-lite"
+# يجرب النماذج بالترتيب، وإذا نموذج انسحب (404) ينتقل للي بعده
+MODELS = [
+    "gemini-flash-lite-latest",
+    "gemini-3.1-flash-lite",
+    "gemini-3.1-flash-lite-preview",
+    "gemini-flash-latest",
+]
+good_model = None
 
 # الأسماء اللي ينادونه فيها
 BOT_NAMES = ["منجي", "المنغولي"]
@@ -44,16 +51,13 @@ def verify_signature(body, signature):
     return hmac.compare_digest(expected, signature)
 
 
-def ask_gemini(chat_id, text):
-    msgs = history.setdefault(chat_id, [])
-    msgs.append({"role": "user", "parts": [{"text": text}]})
-    del msgs[:-10]
-    while msgs and msgs[0]["role"] != "user":
-        msgs.pop(0)
-
-    try:
+def call_gemini(msgs):
+    global good_model
+    order = ([good_model] if good_model else []) + [m for m in MODELS if m != good_model]
+    last = None
+    for m in order:
         r = requests.post(
-            f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent",
+            f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent",
             headers={
                 "x-goog-api-key": GEMINI_KEY,
                 "content-type": "application/json",
@@ -64,6 +68,25 @@ def ask_gemini(chat_id, text):
             },
             timeout=30,
         )
+        if r.status_code == 404:
+            print("Model not found:", m, flush=True)
+            last = r
+            continue
+        if r.status_code == 200:
+            good_model = m
+        return r
+    return last
+
+
+def ask_gemini(chat_id, text):
+    msgs = history.setdefault(chat_id, [])
+    msgs.append({"role": "user", "parts": [{"text": text}]})
+    del msgs[:-10]
+    while msgs and msgs[0]["role"] != "user":
+        msgs.pop(0)
+
+    try:
+        r = call_gemini(msgs)
     except Exception as e:
         print("Gemini request failed:", repr(e), flush=True)
         msgs.pop()
